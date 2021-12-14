@@ -10,15 +10,20 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import LinearSVC, SVC
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import KFold, train_test_split,cross_val_score,GridSearchCV,cross_validate
+from sklearn.model_selection import StratifiedKFold,KFold, train_test_split,cross_val_score,GridSearchCV,cross_validate
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score ,roc_auc_score,precision_recall_curve,classification_report,confusion_matrix
 from sklearn.pipeline import Pipeline
 from xgboost import XGBClassifier
+from keras.wrappers.scikit_learn import KerasClassifier
 
-
+import warnings
+# "error", "ignore", "always", "default", "module" or "once"
+warnings.filterwarnings('ignore', category=FutureWarning)
+warnings.filterwarnings('ignore', category=DeprecationWarning)
+warnings.filterwarnings('ignore', category=DeprecationWarning)
 from data_prep import bank_data_prep,adult_data_prep
 from multiscorer import MultiScorer
-
+from embedding_helper import create_network
 seed = 123
 np.random.seed(seed)
 
@@ -85,21 +90,23 @@ print('Memory usage after encoding: ',round(woe_encoder_transformed.memory_usage
 #              ('hash encoding',hash_transformed), ('target encoding',mean_target_transformed), ('WOE encoding',woe_encoder_transformed)]
 
 #%% Train-Test split
-num_fold = 2
+num_fold = 4
 X=label_transformed.drop(['y'], axis=1)#hash_transformed.drop(['y'], axis=1)
 y=df_bank['y']
+number_of_features=X.shape[1]
+skf = StratifiedKFold(n_splits=num_fold,random_state=seed)
+
 #X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state = seed,stratify=y)
-
 #%%binary classificatin models
-
 models = [
-    ('LR',LogisticRegression(solver= 'liblinear', random_state=seed,max_iter=1000)),
-    ('DT',DecisionTreeClassifier(criterion='entropy', max_depth=3, random_state=0)),
-    ('RF',RandomForestClassifier(n_estimators=100, max_depth=3, random_state=seed,min_samples_leaf=3)),
-    ('KNN',KNeighborsClassifier()),
-    ('XGB', XGBClassifier(eval_metric='logloss', use_label_encoder=False)),
-    ('LSVC',LinearSVC(max_iter=3000)),
-    ('SVM',SVC(gamma='scale'))
+    #('LR',LogisticRegression(solver= 'liblinear', random_state=seed,max_iter=1000)),
+    #('DT',DecisionTreeClassifier(criterion='entropy', max_depth=3, random_state=0)),
+    #('RF',RandomForestClassifier(n_estimators=100, max_depth=3, random_state=seed,min_samples_leaf=3)),
+    #('KNN',KNeighborsClassifier()),
+    #('XGB', XGBClassifier(eval_metric='logloss', use_label_encoder=False)),
+    ('SVM',SVC(gamma='scale')),
+    ('NN', KerasClassifier(build_fn=lambda: create_network(number_of_features), epochs=10, batch_size=100, verbose=0)
+)
     ]
 model_names = [model_name[0] for model_name in models]
 
@@ -117,7 +124,7 @@ for name, model in models:
     start_time = time.time()
     print (name)
     model_index=model_names.index(name)
-    _= cross_val_score(model, X, y, scoring=scorer, cv=num_fold)
+    _= cross_val_score(model, X, y, scoring=scorer, cv=skf)
     results = scorer.get_results()
 
     for metric_name in results.keys():
