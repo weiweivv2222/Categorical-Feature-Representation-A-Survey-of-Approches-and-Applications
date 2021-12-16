@@ -1,19 +1,25 @@
 import pandas as pd
+import os
 import numpy as np
 from numpy import interp
 import sys
-import category_encoders as ce
+import random
+import tensorflow as tf
+seed=123
+os.environ['PYTHONHASHSEED']=str(seed)
+tf.random.set_seed(seed)
+np.random.seed(seed)
+random.seed(seed)
 
-import numpy as np 
+import category_encoders as ce
 from keras.layers.embeddings import Embedding
 from keras.models import Sequential
-import tensorflow as tf
-import random as rn
-import pandas as pd
-import os
+
 from keras import backend 
 from keras import models
 from keras import layers
+
+
 #%% create a NN model
 # Create function returning a compiled network
 def create_network(number_of_features):

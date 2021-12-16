@@ -2,30 +2,39 @@ import config_cat_embedding
 import pandas as pd
 import numpy as np
 import time
+import os
+import random
+import tensorflow as tf
+seed=123
+os.environ['PYTHONHASHSEED']=str(seed)
+tf.random.set_seed(seed)
+np.random.seed(seed)
+random.seed(seed)
 
 import category_encoders as ce
-
 from sklearn.linear_model import LogisticRegression
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.svm import LinearSVC, SVC
+from sklearn.svm import SVC
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import StratifiedKFold,KFold, train_test_split,cross_val_score,GridSearchCV,cross_validate
-from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score ,roc_auc_score,precision_recall_curve,classification_report,confusion_matrix
-from sklearn.pipeline import Pipeline
 from xgboost import XGBClassifier
 from keras.wrappers.scikit_learn import KerasClassifier
+
+from sklearn.model_selection import StratifiedKFold, train_test_split,cross_val_score,GridSearchCV,cross_validate
+from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score ,roc_auc_score,precision_recall_curve,classification_report,confusion_matrix
+from sklearn.pipeline import Pipeline
+
 
 import warnings
 # "error", "ignore", "always", "default", "module" or "once"
 warnings.filterwarnings('ignore', category=FutureWarning)
 warnings.filterwarnings('ignore', category=DeprecationWarning)
-warnings.filterwarnings('ignore', category=DeprecationWarning)
+warnings.filterwarnings('ignore', category=UserWarning)
+
 from data_prep import bank_data_prep,adult_data_prep
 from multiscorer import MultiScorer
 from embedding_helper import create_network
-seed = 123
-np.random.seed(seed)
+
 
 #% load the data and completed the data pre-processing
 
@@ -41,7 +50,7 @@ df_bank, cat_cols_bank=bank_data_prep(bank_data)
 #%%calculate the memory usage of the prepared data frame
 BYTES_TO_MB = 0.000001
 
-round(df_bank.memory_usage(deep=True).sum()* BYTES_TO_MB, 3)
+print(round(df_bank.memory_usage(deep=True).sum()* BYTES_TO_MB, 3))
 
 #round(df_adult.memory_usage(deep=True).sum()* BYTES_TO_MB, 3)
 
@@ -61,7 +70,6 @@ label_encoder=ce.OrdinalEncoder(cols=cat_cols_bank)
 label_transformed=label_encoder.fit_transform(df_bank)
 print('computation time of label:',time.time() - start_time)
 print('Memory usage after encoding: ',round(label_transformed.memory_usage(deep=True).sum()* BYTES_TO_MB,3))
-
 
 
 #hash encoding  with md5 hash function
@@ -90,22 +98,22 @@ print('Memory usage after encoding: ',round(woe_encoder_transformed.memory_usage
 #              ('hash encoding',hash_transformed), ('target encoding',mean_target_transformed), ('WOE encoding',woe_encoder_transformed)]
 
 #%% Train-Test split
-num_fold = 4
+num_fold = 5
 X=label_transformed.drop(['y'], axis=1)#hash_transformed.drop(['y'], axis=1)
 y=df_bank['y']
 number_of_features=X.shape[1]
 skf = StratifiedKFold(n_splits=num_fold,random_state=seed)
 
-#X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state = seed,stratify=y)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state = seed,stratify=y)
 #%%binary classificatin models
 models = [
     #('LR',LogisticRegression(solver= 'liblinear', random_state=seed,max_iter=1000)),
-    #('DT',DecisionTreeClassifier(criterion='entropy', max_depth=3, random_state=0)),
+    #('DT',DecisionTreeClassifier(criterion='entropy', max_depth=3, random_state=seed)),
     #('RF',RandomForestClassifier(n_estimators=100, max_depth=3, random_state=seed,min_samples_leaf=3)),
     #('KNN',KNeighborsClassifier()),
     #('XGB', XGBClassifier(eval_metric='logloss', use_label_encoder=False)),
     ('SVM',SVC(gamma='scale')),
-    ('NN', KerasClassifier(build_fn=lambda: create_network(number_of_features), epochs=10, batch_size=100, verbose=0)
+    ('MLP', KerasClassifier(build_fn=lambda: create_network(number_of_features), epochs=100, batch_size=100, verbose=0)
 )
     ]
 model_names = [model_name[0] for model_name in models]
@@ -134,10 +142,26 @@ for name, model in models:
     cpt_time.append(cmpt_time)
     print ('Computation time',cmpt_time, '\n\n')
     
-#%% KPI in table
+#%KPIs in a table
 rst=pd.DataFrame(results)
 rst_metrics=rst.groupby(np.arange(len(rst))//num_fold).mean()
 rst_metrics.index=model_names
 rst_metrics['Cpt_time']=cpt_time
 rst_metrics=rst_metrics.round(3)
 #rst_metrics.sort_index(axis=0,ascending=True,inplace=True)
+#%%
+clf=LogisticRegression(random_state=0, max_iter=1000)
+clf.fit(X_train,y_train)
+val_pred=clf.predict(X_test)
+print(f1_score(y_test,val_pred,average='weighted'))
+class_report=classification_report(y_test,val_pred)
+
+#save the model to disk
+import pickle
+filename = 'finalized_LG_model.sav'
+pickle.dump(clf, open(filename, 'wb'))
+#%%
+# load the model from disk
+loaded_model = pickle.load(open(filename, 'rb'))
+result = loaded_model.score(X_test, y_test)
+print(result)

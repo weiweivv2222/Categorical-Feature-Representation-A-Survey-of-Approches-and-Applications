@@ -10,8 +10,7 @@ bank_data = pd.read_csv(data_path+'bank-additional-full.csv', sep=';')
 
 seed = 7
 np.random.seed(seed)
-
-#%data pre-processing 
+#%%#%data pre-processing 
 bank_data.isnull().sum()
 bank_data.dropna(inplace=True)
 # set up visualization 
@@ -44,7 +43,7 @@ job.columns=['Job','Target']
 
 #shuffer the rows 
 df=job.sample(frac=1, random_state=12)
-#%%
+#%% different embedding 
 # one-hot encoding 
 one_hot_encoder=ce.OneHotEncoder(cols=['Job']) 
 df_one_hot_transformed=one_hot_encoder.fit_transform(df)
@@ -72,46 +71,4 @@ woe_encoder=ce.WOEEncoder(cols='Job')
 woe_encoder_transformed=woe_encoder.fit_transform(df['Job'],df['Target'])
 print(woe_encoder_transformed.iloc[0:7,])
 y=df[df['Job']=='student']
-#%% Entity embedding approaches 
-import numpy as np 
-from keras.layers.embeddings import Embedding
-from keras.models import Sequential
-import tensorflow as tf
-import random as rn
-import pandas as pd
-import os
-from keras import backend 
 
-#keep the result can be reproduce
-os.environ['PYTHONHASHSEED']='0'
-np.random.seed(42)
-rn.seed(12345)
-session_conf=tf.compat.v1.ConfigProto(intra_op_parallelism_threads=1,
-                            inter_op_parallelism_threads=1)
-tf.random.set_seed(1234)
-sess=tf.compat.v1.Session(graph=tf.compat.v1.get_default_graph(),config=session_conf)
-tf.compat.v1.keras.backend.set_session(sess)
-
-#build the embedding layers
-model=Sequential()
-model.add(Embedding(12,5,input_length=1))
-model.compile('Adam','mape')
-
-#convert job feature with one-hot encoding by indices of the featuer 
-label_encoder=ce.OrdinalEncoder(cols=['Job']) 
-input_array=label_encoder.fit_transform(df.Job)
-input_array=input_array-1
-
-# unique_category_count = 12
-# inputs = tf.one_hot(input_array, unique_category_count)
-# output_array_o=model.predict(inputs)
-
-output_array=model.predict(input_array)
-weight=model.get_weights()
-#%%
-import tensorflow as tf
-
-category_indices = [0, 1, 2, 2, 1, 0]
-unique_category_count = 3
-inputs = tf.one_hot(category_indices, unique_category_count)
-print(inputs.numpy())
