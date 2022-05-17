@@ -100,7 +100,7 @@ print('Memory usage after encoding: ',round(woe_encoder_transformed.memory_usage
 #%%entity embedding
 #%% Train-Test split
 num_fold = 5
-X=mean_target_transformed.drop(['y'], axis=1)#hash_transformed.drop(['y'], axis=1)
+X=woe_encoder_transformed.drop(['y'], axis=1)
 y=df['y']
 number_of_features=X.shape[1]
 skf = StratifiedKFold(n_splits=num_fold,random_state=seed)

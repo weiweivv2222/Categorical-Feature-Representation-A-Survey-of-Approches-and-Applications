@@ -90,6 +90,11 @@ def adult_data_prep(adult_data):
     pd.set_option('display.max_columns', None)
     pd.set_option('display.max_rows', None)
     
+    #remove duplicate features eduational-num
+    re_cols=['educational-num']
+    
+    adult_data.drop(re_cols,axis=1, inplace=True)
+    
     #change letters to strings
     adult_data = adult_data.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
     #adult_data.info()
@@ -101,11 +106,13 @@ def adult_data_prep(adult_data):
     #remove NAs
     adult_data.dropna(inplace=True)
     
+
     # Get all categorical features
     cat_columns = list(adult_data.columns[adult_data.dtypes=='object'])
     cat_columns.remove('income')
     #dummy target variable
-    adult_data['income'] =  adult_data['income'].map({'<=50K': 0, '>50K': 1})
+    adult_data['y'] =  adult_data['income'].map({'<=50K': 0, '>50K': 1})
+    adult_data.drop('income',axis=1, inplace=True)
     
     return(adult_data,cat_columns)
 
