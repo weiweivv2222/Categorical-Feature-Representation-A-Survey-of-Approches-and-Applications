@@ -1,3 +1,5 @@
+
+
 import pandas as pd
 import numpy as np
 from numpy import interp
@@ -50,30 +52,30 @@ one_hot_encoder=ce.OneHotEncoder(cols=['Job'])
 df_one_hot_transformed=one_hot_encoder.fit_transform(df)
 print(df_one_hot_transformed.iloc[0:7,])
 
-# label encode
+# %%label encode
 label_encoder=ce.OrdinalEncoder(cols=['Job']) 
 df_label_transformed=label_encoder.fit_transform(df)
 print(df_label_transformed.iloc[0:7,])
 
-#hash encoding  with md5 hash function
+#%%hash encoding  with md5 hash function
 
 hash_encoder=ce.HashingEncoder(cols=['Job'],n_components=7)
 hash_transformed=hash_encoder.fit_transform(df)
 print(hash_transformed.iloc[0:7,])
 
 
-#target encoding 
+#%%  target encoding
 target_encoder=ce.TargetEncoder(cols='Job',smoothing=1)
 mean_target_transformed=target_encoder.fit_transform(df['Job'],df['Target'])
 print(mean_target_transformed.iloc[0:7,])
 
-#WoE
+#%%WoE
 woe_encoder=ce.WOEEncoder(cols='Job')
 woe_encoder_transformed=woe_encoder.fit_transform(df['Job'],df['Target'])
 print(woe_encoder_transformed.iloc[0:7,])
 y=df[df['Job']=='student']
 
-#%%
+
 #%% Entity embedding approaches 
 #keep the result can be reproduce
 import numpy as np 
