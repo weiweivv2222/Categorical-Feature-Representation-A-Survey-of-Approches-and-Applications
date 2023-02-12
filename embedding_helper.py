@@ -12,7 +12,7 @@ np.random.seed(seed)
 random.seed(seed)
 
 import category_encoders as ce
-from keras.layers.embeddings import Embedding
+from keras.layers import Embedding
 from keras.models import Sequential
 
 from keras import backend 
