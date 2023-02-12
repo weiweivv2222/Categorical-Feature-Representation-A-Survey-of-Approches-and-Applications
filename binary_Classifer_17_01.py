@@ -44,10 +44,11 @@ adult_data=pd.read_csv(data_path+'adult.csv', sep=',')
 #data pre-processing 
 df_bank, cat_cols_bank=bank_data_prep(bank_data)
 df_adult, cat_cols_adult=adult_data_prep(adult_data)
-#df=df_bank
-#cat_cols=cat_cols_bank
-df=df_adult
-cat_cols=cat_cols_adult
+df=df_bank
+
+cat_cols=cat_cols_bank
+#df = df_adult
+#cat_cols=cat_cols_adult
 #%%calculate the memory usage of the prepared data frame
 BYTES_TO_MB = 0.000001
 
@@ -95,17 +96,84 @@ woe_encoder_transformed=woe_encoder.fit_transform(df,df['y'])
 print('computation time of WOE :',time.time() - start_time)
 print('Memory usage after encoding: ',round(woe_encoder_transformed.memory_usage(deep=True).sum()* BYTES_TO_MB,3))
 
-#embeddings = [('one hot encoding',df_one_hot_transformed), ('label encoding',df_label_transformed),
+# embeddings = [('one hot encoding',df_one_hot_transformed), ('label encoding',df_label_transformed),
 #              ('hash encoding',hash_transformed), ('target encoding',mean_target_transformed), ('WOE encoding',woe_encoder_transformed)]
-#%%entity embedding
-#%% Train-Test split
+
+#%% word2vec
+start_time = time.time()
+from gensim.models import Word2Vec
+import numpy as np
+
+# get categorical feature columns
+
+input_data = [df[col].tolist() for col in cat_cols]
+
+# Train the word2vec model
+model = Word2Vec(input_data, vector_size=3, window=5, min_count=1)
+
+# Get the vocabulary
+vocabulary = model.wv.index_to_key
+print("Vocabulary: ", vocabulary)
+
+# Get the vector representation of each word
+print("Vector representation of each word:")
+for word in vocabulary:
+    vector = model.wv.get_vector(word)
+    print(word, ":", vector)
+
+# replace the original features by the learned word2Vec embedding
+
+# Loop through all categorical columns
+for col in cat_cols:
+    # Map each word in the column to its corresponding embedding vector
+    df[col + '_embedding'] = df[col].map(lambda x:  model.wv.get_vector(x))
+
+# Drop the original categorical columns
+df = df.drop(cat_cols, axis=1)
+print('computation time of word2vec :',time.time() - start_time)
+print('Memory usage after encoding: ',round(df.memory_usage(deep=True).sum()* BYTES_TO_MB,3))
+
+y =  df['y']
+
+X = df.drop(['y'], axis=1)
+from sklearn.preprocessing import StandardScaler
+scaler = StandardScaler()
+
+# Get the numerical columns
+numerical_cols = X.select_dtypes(exclude='object').columns
+
+# Fit and transform the numerical columns
+X[numerical_cols] = scaler.fit_transform(X[numerical_cols])
+ 
+# splite embedding columns 
+for col in X.columns:
+    if X[col].dtype == object:
+        new_cols = [f"{col}_{i}" for i in range(len(X[col][0]))]
+        temp = X[col].apply(pd.Series)
+        temp.columns = new_cols
+        X = pd.concat([X, temp], axis=1)
+        X = X.drop([col], axis=1)
+
+#%% Train-Test split for word2vec
 num_fold = 5
-X=woe_encoder_transformed.drop(['y'], axis=1)
-y=df['y']
+
 number_of_features=X.shape[1]
-skf = StratifiedKFold(n_splits=num_fold,random_state=seed)
+skf = StratifiedKFold(n_splits=num_fold,random_state=seed, shuffle = True)
 
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state = seed,stratify=y)
+
+#%% Train-Test split for discrete function approach
+num_fold = 5
+X=woe_encoder_transformed.drop(['y'], axis=1)
+#X = df.drop(['y'], axis=1)
+#y=df['y']
+y =  df['y']
+number_of_features= 1 #or X.shape[1]
+skf = StratifiedKFold(n_splits=num_fold,random_state=seed, shuffle = True)
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state = seed,stratify=y)
+
+
 #%%binary classificatin models
 models = [
     ('LR',LogisticRegression(solver= 'liblinear', random_state=seed,max_iter=1000)),
@@ -117,6 +185,7 @@ models = [
     ('MLP', KerasClassifier(build_fn=lambda: create_network(number_of_features), epochs=100, batch_size=100, verbose=0))
     ]
 model_names = [model_name[0] for model_name in models]
+
 
 scorer = MultiScorer({
     'Accuracy'  : (accuracy_score , {}),
@@ -149,19 +218,23 @@ rst_metrics.index=model_names
 rst_metrics['Cpt_time']=cpt_time
 rst_metrics=rst_metrics.round(3)
 #rst_metrics.sort_index(axis=0,ascending=True,inplace=True)
-#%% an example of LG classifier
-clf=LogisticRegression(random_state=0, max_iter=1000)
-clf.fit(X_train,y_train)
-val_pred=clf.predict(X_test)
-print(f1_score(y_test,val_pred,average='weighted'))
-class_report=classification_report(y_test,val_pred)
 
-#save the model to disk
-import pickle
-filename = 'finalized_LG_model.sav'
-pickle.dump(clf, open(filename, 'wb'))
 
-# load the model from disk
-loaded_model = pickle.load(open(filename, 'rb'))
-#result = loaded_model.score(X_test, y_test)
-#print(result)
+# #%% an example of LG classifier
+# clf=LogisticRegression(random_state=0, max_iter=1000)
+# clf.fit(X_train,y_train)
+# val_pred=clf.predict(X_test)
+# print(f1_score(y_test,val_pred,average='weighted'))
+# class_report=classification_report(y_test,val_pred)
+# accuracy = model.score(X_test, y_test)
+
+# #save the model to disk
+# import pickle
+# filename = 'finalized_LG_model.sav'
+# pickle.dump(clf, open(filename, 'wb'))
+
+# # load the model from disk
+# loaded_model = pickle.load(open(filename, 'rb'))
+# #result = loaded_model.score(X_test, y_test)
+# #print(result)
+
