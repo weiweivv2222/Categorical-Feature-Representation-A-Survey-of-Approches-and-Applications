@@ -44,11 +44,11 @@ adult_data=pd.read_csv(data_path+'adult.csv', sep=',')
 #data pre-processing 
 df_bank, cat_cols_bank=bank_data_prep(bank_data)
 df_adult, cat_cols_adult=adult_data_prep(adult_data)
-df=df_bank
+# df=df_bank
 
-cat_cols=cat_cols_bank
-#df = df_adult
-#cat_cols=cat_cols_adult
+# cat_cols=cat_cols_bank
+df = df_adult
+cat_cols=cat_cols_adult
 #%%calculate the memory usage of the prepared data frame
 BYTES_TO_MB = 0.000001
 
@@ -161,19 +161,275 @@ number_of_features=X.shape[1]
 skf = StratifiedKFold(n_splits=num_fold,random_state=seed, shuffle = True)
 
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state = seed,stratify=y)
+#%% RFNE
 
+start_time = time.time()
+
+import numpy as np
+
+from sklearn.model_selection import train_test_split
+from sklearn.datasets import *
+from sklearn.tree import DecisionTreeClassifier
+# import labelencoder
+from sklearn.preprocessing import LabelEncoder, StandardScaler# instantiate labelencoder object
+from sklearn.ensemble import RandomTreesEmbedding, RandomForestClassifier
+
+y =  df['y']
+X = df.drop(['y'], axis=1)
+
+#label encoding.
+
+X = pd.get_dummies(X, prefix_sep='_', drop_first=True) #One hot encoding, assuming complet knowledge of vocabulary
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=0 )
+
+scl = StandardScaler()
+
+X_train = scl.fit_transform(X_train)
+X_test = scl.transform(X_test)
+
+
+estimator_list = []
+estimators = RandomForestClassifier(n_estimators=50, max_depth=5, random_state=0)
+estimators.fit(X_train,y_train)
+estimator = estimators.estimators_[0]
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state = seed,stratify=y)
+
+# The decision estimator has an attribute called tree_  which stores the entire
+# tree structure and allows access to low level attributes. The binary tree
+# tree_ is represented as a number of parallel arrays. The i-th element of each
+# array holds information about the node `i`. Node 0 is the tree's root. NOTE:
+# Some of the arrays only apply to either leaves or split nodes, resp. In this
+# case the values of nodes of the other type are arbitrary!
+#
+# Among those arrays, we have:
+#   - left_child, id of the left child of the node
+#   - right_child, id of the right child of the node
+#   - feature, feature used for splitting the node
+#   - threshold, threshold value at the node
+#
+
+# Using those arrays, we can parse the tree structure:
+
+n_nodes = estimator.tree_.node_count
+children_left = estimator.tree_.children_left
+children_right = estimator.tree_.children_right
+feature = estimator.tree_.feature
+threshold = estimator.tree_.threshold
+
+
+
+# The tree structure can be traversed to compute various properties such
+# as the depth of each node and whether or not it is a leaf.
+node_depth = np.zeros(shape=n_nodes, dtype=np.int64)
+is_leaves = np.zeros(shape=n_nodes, dtype=bool)
+stack = [(0, -1)]  # seed is the root node id and its parent depth
+while len(stack) > 0:
+    node_id, parent_depth = stack.pop()
+    node_depth[node_id] = parent_depth + 1
+
+    # If we have a test node
+    if (children_left[node_id] != children_right[node_id]):
+        stack.append((children_left[node_id], parent_depth + 1))
+        stack.append((children_right[node_id], parent_depth + 1))
+    else:
+        is_leaves[node_id] = True
+
+print("The binary tree structure has %s nodes and has "
+      "the following tree structure:"
+      % n_nodes)
+for i in range(n_nodes):
+    if is_leaves[i]:
+        print("%snode=%s leaf node." % (node_depth[i] * "\t", i))
+    else:
+        print("%snode=%s test node: go to node %s if X[:, %s] <= %s else to "
+              "node %s."
+              % (node_depth[i] * "\t",
+                 i,
+                 children_left[i],
+                 X.columns[feature[i]],
+                 threshold[i],
+                 children_right[i],
+                 ))
+print()
+
+
+# First let's retrieve the decision path of each sample. The decision_path
+# method allows to retrieve the node indicator functions. A non zero element of
+# indicator matrix at the position (i, j) indicates that the sample i goes
+# through the node j.
+
+node_indicator = estimator.decision_path(X_test)
+
+# Similarly, we can also have the leaves ids reached by each sample.
+
+leave_id = estimator.apply(X_test)
+
+# Now, it's possible to get the tests that were used to predict a sample or
+# a group of samples. First, let's make it for the sample.
+
+sample_id = 0
+node_index = node_indicator.indices[node_indicator.indptr[sample_id]:
+                                    node_indicator.indptr[sample_id + 1]]
+
+# create graphs, both tress and leaves graph
+import networkx as nx
+
+def create_graph_list(estimators_trees):
+    G_list = []
+    G_list_leaves =[]
+    
+    for estimator in estimators_trees.estimators_ :
+        G=nx.Graph() #
+        G_leaves = nx.Graph() # leaves graph
+
+        n_nodes = estimator.tree_.node_count
+        children_left = estimator.tree_.children_left
+        children_right = estimator.tree_.children_right
+        feature = estimator.tree_.feature
+        threshold = estimator.tree_.threshold
+        node_depth = np.zeros(shape=n_nodes, dtype=np.int64)
+        is_leaves = np.zeros(shape=n_nodes, dtype=bool)
+        stack = [(0, -1,0)]  # seed is the root node id and its parent depth
+
+        while len(stack) > 0:
+            node_id, parent_depth,parent_id = stack.pop()
+            node_depth[node_id] = parent_depth + 1
+            G.add_node(str(node_id))
+            G.add_edge(str(parent_id),str(node_id))
+            # If we have a test node
+            if (children_left[node_id] != children_right[node_id]):
+        
+                stack.append((children_left[node_id], parent_depth + 1,node_id))
+                stack.append((children_right[node_id], parent_depth + 1,node_id))
+            else:
+                is_leaves[node_id] = True
+        #append created graph
+        
+        for i in range(0,len(is_leaves)):
+            if (is_leaves[i]):
+                G_leaves.add_node(str(i))
+        
+                for j in range(0,len(is_leaves)):
+                       if (is_leaves[j]):         
+                           if i!=j:
+                                G_leaves.add_node(str(j))
+                                G_leaves.add_edge(str(i),str(j),weight=nx.shortest_path_length(G,source=str(i),target=str(j)))
+        
+        G_list.append(G)
+        G_list_leaves.append(G_leaves)
+        #return multi graph
+    return G_list,G_list_leaves
+
+# # Create Trees and Leaves Graphs
+#The leaves graph connects each of the leaves taking the hops between leaves as the distance.
+import matplotlib.pyplot as plt
+from node2vec import Node2Vec
+
+G_list_leaves,G_list = create_graph_list(estimators)
+
+G = G_list[0]
+nx.draw(G,with_labels = True)
+#plt.savefig('mytree_many.png',format='png', dpi=1200)
+
+#plt.show()
+
+A = nx.adjacency_matrix(G)
+
+
+#plt.imshow(A.todense(), cmap='hot', interpolation='nearest')
+
+#plt.show()
+
+np.shape(A.todense())
+
+from tqdm import tqdm_notebook as tqdm
+
+node2vec_list = []
+for G in tqdm(G_list):
+    node2vec = Node2Vec(G, dimensions=10, walk_length=15, num_walks=100)
+    node2vec_list.append(node2vec)
+    
+    
+# Learn embeddings # Learn embeddings     
+models_list = []
+
+for node2v in node2vec_list:
+    model = node2v.fit(window=5, min_count=1)
+    models_list.append(model)
+
+# plot the first community
+to_plot = []
+
+model = models_list[0]
+
+for i in model.wv. index_to_key:
+    to_plot.append(model.wv.get_vector(i))
+
+
+ar = np.array(to_plot)
+plt.plot(ar[:,0], ar[:,1], 'o',  linewidth=2, markersize=20)
+
+index =0 
+for i in model.wv. index_to_key:
+    plt.text(ar[index,0], ar[index,1], i)
+    index+=1
+
+plt.savefig('embedding_result_many.png',format='png', dpi=1200)
+plt.show()
+    
+# extract embeddings on Data
+reps = []
+reps_test = []
+for estimator, model in tqdm(zip(estimators.estimators_, models_list)):
+    leave_id = estimator.apply(X_train)
+    vect_rep = [model.wv.get_vector(str(i)) for i in leave_id if str(i) in model.wv.index_to_key]
+    leave_id_test = estimator.apply(X_test)
+    vect_rep_test = [model.wv.get_vector(str(i)) for i in leave_id_test if str(i) in model.wv.index_to_key]
+    if reps == []:
+        reps.append(vect_rep)
+        reps_test.append(vect_rep_test)
+    else:
+        reps = np.array(reps).squeeze()
+        reps_test = np.array(reps_test).squeeze()
+        reps = np.hstack((reps, np.array(vect_rep)))
+        reps_test = np.hstack((reps_test, np.array(vect_rep_test)))
+        print(np.shape(reps))
+data = np.array(reps)
+data_test = np.array(reps_test)
+
+# concatenate the embedidng data with the original features with One-hot encoding 
+X_train_embeded= data #np.hstack((X_train,data))
+X_test_embeded= data_test # np.hstack((X_test,data_test))
+
+X_train_embeded= pd.DataFrame(np.hstack((X_train,data)))
+X_test_embeded= pd.DataFrame(np.hstack((X_test,data_test)))
+
+
+print('computation time of RFNE :',time.time() - start_time)
+print('Memory usage of x train data after encoding: ',round(X_train_embeded.memory_usage(deep=True).sum()* BYTES_TO_MB,3))
+print('Memory usage of x  test after encoding: ',round(X_test_embeded.memory_usage(deep=True).sum()* BYTES_TO_MB,3))
+print('Memory usage of y train after encoding: ',round(y_train.memory_usage(deep=True)* BYTES_TO_MB,3))
+print('Memory usage of y test after encoding: ',round(y_test.memory_usage(deep=True)* BYTES_TO_MB,3))
+
+#%% parameters for RFNE
+X_train = X_train_embeded
+X_test = X_test_embeded
+num_fold = 5
+number_of_features= X.shape[1]
+skf = StratifiedKFold(n_splits=num_fold,random_state=seed, shuffle = True)
 #%% Train-Test split for discrete function approach
 num_fold = 5
 X=woe_encoder_transformed.drop(['y'], axis=1)
 #X = df.drop(['y'], axis=1)
 #y=df['y']
 y =  df['y']
-number_of_features= 1 #or X.shape[1]
+number_of_features=  X.shape[1]
 skf = StratifiedKFold(n_splits=num_fold,random_state=seed, shuffle = True)
 
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state = seed,stratify=y)
 
-
+    
 #%%binary classificatin models
 models = [
     ('LR',LogisticRegression(solver= 'liblinear', random_state=seed,max_iter=1000)),
